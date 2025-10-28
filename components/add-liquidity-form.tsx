@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Minus, Info } from "lucide-react"
+import { Plus, Minus, Info, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,7 @@ import { useUniswapV3 } from "@/hooks/use-uniswap-v3"
 import { useToast } from "@/hooks/use-toast"
 import { useTokenBalance, TokenBalance } from "@/hooks/use-token-balance"
 import { usePushChainClient } from "@pushchain/ui-kit"
-import { PRODUCTION_POOLS } from "@/lib/uniswap-v3-contracts"
+import { usePools, type PoolData } from "@/hooks/use-pools"
 import { calculateTickRange } from "@/lib/universal-payload"
 import { ethers } from "ethers"
 
@@ -25,6 +25,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   const { toast } = useToast()
   const { getBalance } = useTokenBalance()
   const { pushChainClient } = usePushChainClient()
+  const { getPoolByID } = usePools()
 
   const [activeTab, setActiveTab] = useState<"add" | "remove">("add")
   const [amount0, setAmount0] = useState("")
@@ -35,15 +36,42 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   const [balance0, setBalance0] = useState<TokenBalance | null>(null)
   const [balance1, setBalance1] = useState<TokenBalance | null>(null)
   const [loadingBalances, setLoadingBalances] = useState(false)
+  const [poolData, setPoolData] = useState<PoolData | null>(null)
+  const [loadingPool, setLoadingPool] = useState(true)
+  const [poolError, setPoolError] = useState<string | null>(null)
 
-  const poolData = Object.values(PRODUCTION_POOLS).find((p) => p.address.toLowerCase() === poolId.toLowerCase())
+  // Fetch pool data from blockchain using pool ID
+  useEffect(() => {
+    const fetchPoolData = async () => {
+      try {
+        setLoadingPool(true)
+        setPoolError(null)
 
-  const pool = poolData || {
-    token0Symbol: "ETH",
-    token1Symbol: "USDC",
-    currentTick: "0",
-    fee: 3000,
-  }
+        if (!poolId) {
+          setPoolError("No pool ID provided")
+          return
+        }
+
+        console.log(`[AddLiquidityForm] Fetching pool data for ID: ${poolId}`)
+
+        const fetchedPool = await getPoolByID(poolId)
+
+        if (fetchedPool) {
+          setPoolData(fetchedPool)
+          console.log(`[AddLiquidityForm] Pool fetched: ${fetchedPool.token0.symbol}/${fetchedPool.token1.symbol}`)
+        } else {
+          setPoolError("Pool not found")
+        }
+      } catch (err: any) {
+        console.error("[AddLiquidityForm] Error fetching pool:", err)
+        setPoolError(err.message || "Failed to fetch pool")
+      } finally {
+        setLoadingPool(false)
+      }
+    }
+
+    fetchPoolData()
+  }, [poolId, getPoolByID])
 
   // Fetch token balances when pool data changes or wallet connects
   useEffect(() => {
@@ -53,12 +81,13 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
       try {
         setLoadingBalances(true)
 
-        const walletAddress = await pushChainClient.universal.account
+        const signer = pushChainClient.getSigner()
+        const walletAddress = await signer.getAddress()
 
         // Fetch both balances in parallel
         const [bal0, bal1] = await Promise.all([
-          getBalance(poolData.token0, walletAddress),
-          getBalance(poolData.token1, walletAddress),
+          getBalance(poolData.token0.address, walletAddress),
+          getBalance(poolData.token1.address, walletAddress),
         ])
 
         setBalance0(bal0)
@@ -76,13 +105,10 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   const handleAmount0Change = (value: string) => {
     setAmount0(value)
     if (value && !isNaN(Number(value)) && poolData) {
-      // Get token decimals from pool data
-      const token0Decimals = 18 // Default, should be fetched from contract
-      const token1Decimals = 6 // Default, should be fetched from contract
-
-      // Calculate amount1 based on current price
-      const currentPrice = poolData.priceRatio
-      setAmount1((Number(value) * currentPrice).toFixed(token1Decimals))
+      // Calculate amount1 based on current tick
+      // For simplicity, assume 1:1 ratio initially
+      const ratio = 1 // This should be calculated from sqrtPriceX96
+      setAmount1((Number(value) * ratio).toFixed(poolData.token1.decimals))
     } else {
       setAmount1("")
     }

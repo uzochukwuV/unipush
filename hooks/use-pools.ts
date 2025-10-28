@@ -310,6 +310,41 @@ export function usePools() {
     [isConnected, getPoolAddress, getPoolState],
   )
 
+  /**
+   * Get pool by pool address ID
+   * Directly queries pool state from contract address
+   */
+  const getPoolByID = useCallback(
+    async (poolAddress: string): Promise<PoolData | null> => {
+      try {
+        if (!poolAddress || !ethers.isAddress(poolAddress)) {
+          console.warn("[usePools] Invalid pool address:", poolAddress)
+          setError("Invalid pool address")
+          return null
+        }
+
+        console.log(`[usePools] Fetching pool by ID: ${poolAddress}`)
+
+        // Get pool state directly from address
+        const poolState = await getPoolState(poolAddress)
+        if (!poolState) {
+          setError("Pool not found")
+          return null
+        }
+
+        console.log(`[usePools] Pool found: ${poolState.token0?.symbol}/${poolState.token1?.symbol}`)
+
+        return poolState as PoolData
+      } catch (err: any) {
+        const errorMsg = err.message || "Failed to fetch pool by ID"
+        setError(errorMsg)
+        console.error("[usePools] Error fetching pool by ID:", err)
+        return null
+      }
+    },
+    [getPoolState],
+  )
+
   return {
     loading,
     error,
@@ -317,6 +352,7 @@ export function usePools() {
     isConnected,
     getAllPools,
     getPool,
+    getPoolByID,
     getPoolAddress,
     getPoolState,
     getTokenByAddress,
