@@ -81,8 +81,8 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
       try {
         setLoadingBalances(true)
 
-        const signer = pushChainClient.getSigner()
-        const walletAddress = await signer.getAddress()
+        const signer = pushChainClient.universal.account
+        const walletAddress = signer
 
         // Fetch both balances in parallel
         const [bal0, bal1] = await Promise.all([
@@ -115,7 +115,14 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   }
 
   const handleAddLiquidity = async () => {
-   
+    if (!poolData) {
+      toast({
+        title: "Pool Data Missing",
+        description: "Pool data is not loaded yet",
+        variant: "destructive",
+      })
+      return
+    }
 
     if (!amount0 || !amount1 || !minPrice || !maxPrice) {
       toast({
@@ -138,26 +145,22 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
     setIsProcessing(true)
 
     try {
-      if (!poolData) {
-        throw new Error("Pool data not found")
-      }
-
       const { tickLower, tickUpper } = calculateTickRange(
         Number(minPrice),
         Number(maxPrice),
-        18, // token0Decimals
-        6, // token1Decimals
+        poolData.token0.decimals,
+        poolData.token1.decimals,
       )
 
-      console.log("[v0] Calculated ticks:", { tickLower, tickUpper })
+      console.log("[AddLiquidityForm] Calculated ticks:", { tickLower, tickUpper })
 
-      const amount0Wei = ethers.parseUnits(amount0, 18)
-      const amount1Wei = ethers.parseUnits(amount1, 6)
+      const amount0Wei = ethers.parseUnits(amount0, poolData.token0.decimals)
+      const amount1Wei = ethers.parseUnits(amount1, poolData.token1.decimals)
 
-      console.log("[v0] Adding liquidity with:", {
-        token0: poolData.token0,
-        token1: poolData.token1,
-        fee: pool.fee,
+      console.log("[AddLiquidityForm] Adding liquidity with:", {
+        token0: poolData.token0.address,
+        token1: poolData.token1.address,
+        fee: poolData.fee,
         amount0: amount0Wei.toString(),
         amount1: amount1Wei.toString(),
         tickLower,
@@ -165,9 +168,9 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
       })
 
       await addLiquidity({
-        token0: poolData.token0,
-        token1: poolData.token1,
-        fee: pool.fee,
+        token0: poolData.token0.address,
+        token1: poolData.token1.address,
+        fee: poolData.fee,
         amount0: amount0Wei.toString(),
         amount1: amount1Wei.toString(),
         tickLower,
@@ -176,7 +179,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
 
       toast({
         title: "Liquidity Added",
-        description: `Successfully added ${amount0} ${pool.token0Symbol} and ${amount1} ${pool.token1Symbol}`,
+        description: `Successfully added ${amount0} ${poolData.token0.symbol} and ${amount1} ${poolData.token1.symbol}`,
       })
 
       setAmount0("")
@@ -184,7 +187,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
       setMinPrice("")
       setMaxPrice("")
     } catch (error: any) {
-      console.error("[v0] Add liquidity error:", error)
+      console.error("[AddLiquidityForm] Add liquidity error:", error)
       toast({
         title: "Transaction Failed",
         description: error.message || "Failed to add liquidity",
@@ -232,6 +235,31 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
     }
   }
 
+  // Show loading state
+  if (loadingPool) {
+    return (
+      <Card className="glass border-border/50 p-12 text-center">
+        <div className="flex flex-col items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-pink-500 mb-4" />
+          <h3 className="text-xl font-semibold mb-2">Loading Pool Data</h3>
+          <p className="text-muted-foreground">Fetching pool information from the blockchain...</p>
+        </div>
+      </Card>
+    )
+  }
+
+  // Show error state
+  if (poolError || !poolData) {
+    return (
+      <Card className="glass p-12 text-center border-red-500/20 bg-red-500/5">
+        <div className="max-w-md mx-auto">
+          <h3 className="text-xl font-semibold mb-2 text-red-500">Error Loading Pool</h3>
+          <p className="text-muted-foreground mb-6">{poolError || "Pool data not found"}</p>
+        </div>
+      </Card>
+    )
+  }
+
   return (
     <Card className="glass border-border/50 p-6">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "add" | "remove")}>
@@ -250,7 +278,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label className="text-base font-semibold">Set Price Range</Label>
-              <div className="text-sm text-muted-foreground">Current: {poolData?.priceRatio || "N/A"}</div>
+              <div className="text-sm text-muted-foreground">Current Tick: {poolData.tick}</div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -264,7 +292,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
                   className="h-12 text-lg bg-secondary/50"
                 />
                 <div className="text-xs text-muted-foreground">
-                  {pool.token1Symbol} per {pool.token0Symbol}
+                  {poolData.token1.symbol} per {poolData.token0.symbol}
                 </div>
               </div>
 
@@ -278,7 +306,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
                   className="h-12 text-lg bg-secondary/50"
                 />
                 <div className="text-xs text-muted-foreground">
-                  {pool.token1Symbol} per {pool.token0Symbol}
+                  {poolData.token1.symbol} per {poolData.token0.symbol}
                 </div>
               </div>
             </div>
@@ -296,9 +324,9 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-1">
-                <Label className="text-sm text-muted-foreground">{pool.token0Symbol}</Label>
+                <Label className="text-sm text-muted-foreground">{poolData.token0.symbol}</Label>
                 {balance0 && (
-                  <div className="text-xs text-muted-foreground">Balance: {balance0.formatted} {pool.token0Symbol}</div>
+                  <div className="text-xs text-muted-foreground">Balance: {balance0.formatted} {poolData.token0.symbol}</div>
                 )}
                 {loadingBalances && !balance0 && (
                   <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
@@ -311,18 +339,19 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
                   value={amount0}
                   onChange={(e) => handleAmount0Change(e.target.value)}
                   className="h-14 text-2xl font-semibold bg-secondary/50"
+                  disabled={loadingPool}
                 />
                 <div className="flex items-center gap-2 px-4 rounded-lg bg-secondary/50">
-                  <span className="font-semibold">{pool.token0Symbol}</span>
+                  <span className="font-semibold">{poolData.token0.symbol}</span>
                 </div>
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-1">
-                <Label className="text-sm text-muted-foreground">{pool.token1Symbol}</Label>
+                <Label className="text-sm text-muted-foreground">{poolData.token1.symbol}</Label>
                 {balance1 && (
-                  <div className="text-xs text-muted-foreground">Balance: {balance1.formatted} {pool.token1Symbol}</div>
+                  <div className="text-xs text-muted-foreground">Balance: {balance1.formatted} {poolData.token1.symbol}</div>
                 )}
                 {loadingBalances && !balance1 && (
                   <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
@@ -337,7 +366,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
                   className="h-14 text-2xl font-semibold bg-secondary/50"
                 />
                 <div className="flex items-center gap-2 px-4 rounded-lg bg-secondary/50">
-                  <span className="font-semibold">{pool.token1Symbol}</span>
+                  <span className="font-semibold">{poolData.token1.symbol}</span>
                 </div>
               </div>
             </div>
@@ -400,15 +429,15 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
               <div className="text-sm font-semibold mb-2">You will receive:</div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm">{pool.token0Symbol}</span>
+                  <span className="text-sm">{poolData.token0.symbol}</span>
                 </div>
-                <span className="font-medium">0.5 {pool.token0Symbol}</span>
+                <span className="font-medium">0.5 {poolData.token0.symbol}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm">{pool.token1Symbol}</span>
+                  <span className="text-sm">{poolData.token1.address}</span>
                 </div>
-                <span className="font-medium">1,225 {pool.token1Symbol}</span>
+                <span className="font-medium">1,225 {poolData.token1.address}</span>
               </div>
             </div>
           )}
