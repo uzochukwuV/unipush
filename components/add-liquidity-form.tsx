@@ -30,8 +30,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   const [activeTab, setActiveTab] = useState<"add" | "remove">("add")
   const [amount0, setAmount0] = useState("")
   const [amount1, setAmount1] = useState("")
-  const [minPrice, setMinPrice] = useState("")
-  const [maxPrice, setMaxPrice] = useState("")
+  const [selectedRange, setSelectedRange] = useState<{ min: number; max: number; label: string } | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [balance0, setBalance0] = useState<TokenBalance | null>(null)
   const [balance1, setBalance1] = useState<TokenBalance | null>(null)
@@ -105,10 +104,52 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   const handleAmount0Change = (value: string) => {
     setAmount0(value)
     if (value && !isNaN(Number(value)) && poolData) {
-      // Calculate amount1 based on current tick
-      // For simplicity, assume 1:1 ratio initially
-      const ratio = 1 // This should be calculated from sqrtPriceX96
-      setAmount1((Number(value) * ratio).toFixed(poolData.token1.decimals))
+      // Calculate amount1 based on sqrtPriceX96
+      // Formula: (sqrtPriceX96 / 2^96)^2 * 10^(token1Decimals - token0Decimals) = price ratio
+      // amount1 = amount0 * price_ratio
+
+      try {
+        // Convert sqrtPriceX96 from string to BigInt
+        const sqrtPriceX96 = BigInt(poolData.sqrtPriceX96)
+
+        // Calculate price: (sqrtPriceX96 / 2^96)^2
+        // Using BigInt for precision: price = (sqrtPriceX96^2) / (2^192)
+        const sqrtPriceX96Squared = sqrtPriceX96 * sqrtPriceX96
+
+        // Calculate 2^96 and 2^192 using BigInt
+        const q96 = BigInt(1) << BigInt(96) // 2^96
+        const q192 = q96 * q96 // 2^192
+
+        // Calculate decimal adjustment: 10^(token1Decimals - token0Decimals)
+        const decimalDiff = poolData.token1.decimals - poolData.token0.decimals
+        let decimalAdjustment = BigInt(1)
+        for (let i = 0; i < Math.abs(decimalDiff); i++) {
+          decimalAdjustment *= BigInt(10)
+        }
+
+        // price = (sqrtPriceX96^2 / 2^192) * 10^(token1Decimals - token0Decimals)
+        let priceRatio: number
+
+        if (decimalDiff >= 0) {
+          // token1 has more or equal decimals
+          const numerator = sqrtPriceX96Squared * decimalAdjustment
+          priceRatio = Number(numerator / q192)
+        } else {
+          // token0 has more decimals
+          const denominator = q192 / decimalAdjustment
+          priceRatio = Number(sqrtPriceX96Squared / denominator)
+        }
+
+        // Calculate amount1: amount0 * price_ratio
+        const amount1Value = Number(value) * priceRatio
+
+        // Format to appropriate decimal places
+        setAmount1(amount1Value.toFixed(poolData.token1.decimals))
+      } catch (err) {
+        console.error("[AddLiquidityForm] Error calculating price from sqrtPriceX96:", err)
+        // Fallback to simple 1:1 ratio if calculation fails
+        setAmount1(value)
+      }
     } else {
       setAmount1("")
     }
@@ -124,19 +165,10 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
       return
     }
 
-    if (!amount0 || !amount1 || !minPrice || !maxPrice) {
+    if (!amount0 || !amount1 || !selectedRange) {
       toast({
         title: "Invalid Input",
-        description: "Please fill in all fields",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (Number(minPrice) >= Number(maxPrice)) {
-      toast({
-        title: "Invalid Price Range",
-        description: "Min price must be less than max price",
+        description: "Please fill in all fields and select a price range",
         variant: "destructive",
       })
       return
@@ -145,9 +177,43 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
     setIsProcessing(true)
 
     try {
+      // Calculate current pool price from sqrtPriceX96
+      const sqrtPriceX96 = BigInt(poolData.sqrtPriceX96)
+      const q96 = BigInt(1) << BigInt(96)
+      const q192 = q96 * q96
+      const sqrtPriceX96Squared = sqrtPriceX96 * sqrtPriceX96
+
+      // Calculate decimal adjustment
+      const decimalDiff = poolData.token1.decimals - poolData.token0.decimals
+      let decimalAdjustment = BigInt(1)
+      for (let i = 0; i < Math.abs(decimalDiff); i++) {
+        decimalAdjustment *= BigInt(10)
+      }
+
+      // Calculate current price ratio
+      let currentPrice: number
+      if (decimalDiff >= 0) {
+        const numerator = sqrtPriceX96Squared * decimalAdjustment
+        currentPrice = Number(numerator / q192)
+      } else {
+        const denominator = q192 / decimalAdjustment
+        currentPrice = Number(sqrtPriceX96Squared / denominator)
+      }
+
+      // Calculate min and max prices based on selected range
+      const minPrice = currentPrice * (selectedRange.min / 100)
+      const maxPrice = currentPrice * (selectedRange.max / 100)
+
+      console.log("[AddLiquidityForm] Price calculation:", {
+        currentPrice,
+        selectedRange,
+        minPrice,
+        maxPrice,
+      })
+
       const { tickLower, tickUpper } = calculateTickRange(
-        Number(minPrice),
-        Number(maxPrice),
+        minPrice,
+        maxPrice,
         poolData.token0.decimals,
         poolData.token1.decimals,
       )
@@ -184,8 +250,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
 
       setAmount0("")
       setAmount1("")
-      setMinPrice("")
-      setMaxPrice("")
+      setSelectedRange(null)
     } catch (error: any) {
       console.error("[AddLiquidityForm] Add liquidity error:", error)
       toast({
@@ -275,105 +340,127 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
         </TabsList>
 
         <TabsContent value="add" className="space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-base font-semibold">Set Price Range</Label>
-              <div className="text-sm text-muted-foreground">Current Tick: {poolData.tick}</div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Min Price</Label>
-                <Input
-                  type="text"
-                  placeholder="0.0"
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                  className="h-12 text-lg bg-secondary/50"
-                />
-                <div className="text-xs text-muted-foreground">
-                  {poolData.token1.symbol} per {poolData.token0.symbol}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Max Price</Label>
-                <Input
-                  type="text"
-                  placeholder="0.0"
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                  className="h-12 text-lg bg-secondary/50"
-                />
-                <div className="text-xs text-muted-foreground">
-                  {poolData.token1.symbol} per {poolData.token0.symbol}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-              <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-blue-500">
-                Your liquidity will only earn fees when the price is within your selected range.
-              </p>
-            </div>
-          </div>
-
+          {/* Token Amounts Input */}
           <div className="space-y-4">
             <Label className="text-base font-semibold">Deposit Amounts</Label>
+            <p className="text-sm text-muted-foreground">
+              Enter {poolData.token0.symbol} amount and {poolData.token1.symbol} will be calculated automatically
+            </p>
 
+            {/* Token 0 Input */}
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-1">
-                <Label className="text-sm text-muted-foreground">{poolData.token0.symbol}</Label>
+                <Label className="text-sm font-medium">{poolData.token0.symbol}</Label>
                 {balance0 && (
-                  <div className="text-xs text-muted-foreground">Balance: {balance0.formatted} {poolData.token0.symbol}</div>
+                  <button
+                    onClick={() => setAmount0(balance0.balanceDecimal.toString())}
+                    className="text-xs text-blue-500 hover:text-blue-600 font-semibold"
+                  >
+                    Max: {balance0.formatted}
+                  </button>
                 )}
                 {loadingBalances && !balance0 && (
-                  <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
+                  <div className="text-xs text-muted-foreground animate-pulse">Loading balance...</div>
                 )}
               </div>
               <div className="flex gap-2">
                 <Input
-                  type="text"
+                  type="number"
                   placeholder="0.0"
                   value={amount0}
                   onChange={(e) => handleAmount0Change(e.target.value)}
                   className="h-14 text-2xl font-semibold bg-secondary/50"
                   disabled={loadingPool}
+                  min="0"
+                  step="0.0001"
                 />
-                <div className="flex items-center gap-2 px-4 rounded-lg bg-secondary/50">
+                <div className="flex items-center justify-center px-4 rounded-lg bg-secondary/50 min-w-fit">
                   <span className="font-semibold">{poolData.token0.symbol}</span>
                 </div>
               </div>
             </div>
 
+            {/* Token 1 Input - Auto Calculated */}
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-1">
-                <Label className="text-sm text-muted-foreground">{poolData.token1.symbol}</Label>
+                <Label className="text-sm font-medium">{poolData.token1.symbol}</Label>
                 {balance1 && (
-                  <div className="text-xs text-muted-foreground">Balance: {balance1.formatted} {poolData.token1.symbol}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Available: {balance1.formatted}
+                  </div>
                 )}
                 {loadingBalances && !balance1 && (
-                  <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
+                  <div className="text-xs text-muted-foreground animate-pulse">Loading balance...</div>
                 )}
               </div>
               <div className="flex gap-2">
-                <Input
-                  type="text"
-                  placeholder="0.0"
-                  value={amount1}
-                  readOnly
-                  className="h-14 text-2xl font-semibold bg-secondary/50"
-                />
-                <div className="flex items-center gap-2 px-4 rounded-lg bg-secondary/50">
+                <div className="flex-1 relative">
+                  <Input
+                    type="number"
+                    placeholder="0.0"
+                    value={amount1}
+                    readOnly
+                    className="h-14 text-2xl font-semibold bg-secondary/50 text-muted-foreground"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    Auto
+                  </div>
+                </div>
+                <div className="flex items-center justify-center px-4 rounded-lg bg-secondary/50 min-w-fit">
                   <span className="font-semibold">{poolData.token1.symbol}</span>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Automatically calculated based on current pool price
+              </p>
             </div>
           </div>
 
-          {amount0 && amount1 && minPrice && maxPrice && (
+          {/* Price Range Selection */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-semibold">Price Range</Label>
+              <div className="text-sm text-muted-foreground">Current Tick: {poolData.tick}</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "Tight (0.9x - 1.1x)", min: 90, max: 110, desc: "0.9x to 1.1x" },
+                { label: "Balanced (0.5x - 2x)", min: 50, max: 200, desc: "0.5x to 2x" },
+                { label: "Wide (0.25x - 4x)", min: 25, max: 400, desc: "0.25x to 4x" },
+                { label: "Very Wide (0.1x - 10x)", min: 10, max: 1000, desc: "0.1x to 10x" },
+              ].map((range) => (
+                <button
+                  key={range.label}
+                  onClick={() => {
+                    setSelectedRange({ min: range.min, max: range.max, label: range.label })
+                  }}
+                  className={`p-3 rounded-lg border-2 transition-all ${
+                    selectedRange?.label === range.label
+                      ? "border-pink-500 bg-pink-500/10"
+                      : "border-border/50 hover:border-pink-500/50 bg-secondary/30"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-left">{range.label}</div>
+                  <div className="text-xs text-muted-foreground text-left">{range.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-blue-500">
+                Tighter ranges earn more fees but require more active management. Wider ranges earn less but are more passive.
+              </p>
+            </div>
+          </div>
+
+          {amount0 && amount1 && selectedRange && (
             <div className="space-y-2 p-4 rounded-lg bg-secondary/50">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Price Range</span>
+                <span className="font-medium">{selectedRange.label}</span>
+              </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Pool Share</span>
                 <span className="font-medium">0.05%</span>

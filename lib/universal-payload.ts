@@ -350,6 +350,21 @@ export function generateAddLiquidityPayload(
     },
   ])
 
+  // Mint position with correct sorted token order
+        // const mintParams = {
+        //     token0: sortedToken0,
+        //     token1: sortedToken1,
+        //     fee: fee,
+        //     tickLower: tickLower,
+        //     tickUpper: tickUpper,
+        //     amount0Desired: poolAmount0Desired,
+        //     amount1Desired: poolAmount1Desired,
+        //     amount0Min: 1,
+        //     amount1Min: 1,
+        //     recipient: signer.address,
+        //     deadline: Math.floor(Date.now() / 1000) + 60 * 20
+        // };
+
   const mintParams = {
     token0,
     token1,
@@ -358,10 +373,10 @@ export function generateAddLiquidityPayload(
     tickUpper,
     amount0Desired,
     amount1Desired,
-    amount0Min: 0,
-    amount1Min: 0,
+    amount0Min: 1,
+    amount1Min: 1,
     recipient,
-    deadline: Math.floor(Date.now() / 1000) + 1200,
+    deadline: Math.floor(Date.now() / 1000) + 120,
   }
 
   const calldata = positionManager.interface.encodeFunctionData("mint", [mintParams])

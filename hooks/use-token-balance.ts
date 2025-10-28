@@ -44,7 +44,8 @@ export function useTokenBalance() {
           `[useTokenBalance] Fetching balance for ${tokenAddress} on wallet ${walletAddress}`,
         )
 
-        const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI)
+        const provider = new ethers.JsonRpcProvider('https://evm.rpc-testnet-donut-node1.push.org/')
+        const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider)
 
         // Get balance and decimals in parallel
         const [balance, decimals] = await Promise.all([
@@ -113,10 +114,11 @@ export function useTokenBalance() {
       try {
         console.log(`[useTokenBalance] Fetching balances for ${tokenAddresses.length} tokens`)
 
+        const provider = new ethers.JsonRpcProvider('https://evm.rpc-testnet-donut-node1.push.org/')
         const balances = await Promise.all(
           tokenAddresses.map(async (tokenAddress) => {
             try {
-              const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI)
+              const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider)
 
               const [balance, decimals] = await Promise.all([
                 tokenContract.balanceOf(walletAddress),
@@ -186,7 +188,8 @@ export function useTokenBalance() {
           `[useTokenBalance] Fetching allowance for ${tokenAddress} spender ${spenderAddress}`,
         )
 
-        const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI)
+        const provider = new ethers.JsonRpcProvider('https://evm.rpc-testnet-donut-node1.push.org/')
+        const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider)
         const allowance = await tokenContract.allowance(walletAddress, spenderAddress)
 
         console.log(`[useTokenBalance] Allowance: ${allowance.toString()}`)
