@@ -1,93 +1,29 @@
 "use client"
 
-import { useState } from "react"
-import { Plus } from "lucide-react"
+import { useEffect } from "react"
+import { Plus, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { PositionCard } from "@/components/position-card"
 
 import Link from "next/link"
 import { usePushChainClient } from "@pushchain/ui-kit"
-
-interface Position {
-  id: string
-  poolId: string
-  token0: {
-    symbol: string
-    name: string
-    logoUrl: string
-  }
-  token1: {
-    symbol: string
-    name: string
-    logoUrl: string
-  }
-  fee: number
-  liquidity: string
-  minPrice: string
-  maxPrice: string
-  currentPrice: string
-  inRange: boolean
-  uncollectedFees0: string
-  uncollectedFees1: string
-  totalValue: string
-  pnl: number
-}
-
-const MOCK_POSITIONS: Position[] = [
-  {
-    id: "1",
-    poolId: "1",
-    token0: { symbol: "ETH", name: "Ethereum", logoUrl: "/placeholder.svg?height=40&width=40" },
-    token1: { symbol: "USDC", name: "USD Coin", logoUrl: "/placeholder.svg?height=40&width=40" },
-    fee: 0.3,
-    liquidity: "0.5 ETH + 1,225 USDC",
-    minPrice: "2,200",
-    maxPrice: "2,700",
-    currentPrice: "2,450",
-    inRange: true,
-    uncollectedFees0: "0.0023",
-    uncollectedFees1: "5.64",
-    totalValue: "$2,450",
-    pnl: 12.5,
-  },
-  {
-    id: "2",
-    poolId: "2",
-    token0: { symbol: "WBTC", name: "Wrapped Bitcoin", logoUrl: "/placeholder.svg?height=40&width=40" },
-    token1: { symbol: "ETH", name: "Ethereum", logoUrl: "/placeholder.svg?height=40&width=40" },
-    fee: 0.3,
-    liquidity: "0.05 WBTC + 0.8 ETH",
-    minPrice: "15.5",
-    maxPrice: "17.5",
-    currentPrice: "18.2",
-    inRange: false,
-    uncollectedFees0: "0.00012",
-    uncollectedFees1: "0.0019",
-    totalValue: "$3,920",
-    pnl: -3.2,
-  },
-  {
-    id: "3",
-    poolId: "3",
-    token0: { symbol: "USDC", name: "USD Coin", logoUrl: "/placeholder.svg?height=40&width=40" },
-    token1: { symbol: "USDT", name: "Tether USD", logoUrl: "/placeholder.svg?height=40&width=40" },
-    fee: 0.01,
-    liquidity: "5,000 USDC + 5,000 USDT",
-    minPrice: "0.998",
-    maxPrice: "1.002",
-    currentPrice: "1.000",
-    inRange: true,
-    uncollectedFees0: "2.45",
-    uncollectedFees1: "2.47",
-    totalValue: "$10,000",
-    pnl: 8.7,
-  },
-]
+import { usePositions } from "@/hooks/use-positions"
 
 export default function PositionsPage() {
-  const [positions] = useState<Position[]>(MOCK_POSITIONS)
   const { isInitialized: isConnected } = usePushChainClient()
+  const { positions, loading, error, getAllPositions } = usePositions()
+
+  // Fetch positions on mount or when wallet connects
+  useEffect(() => {
+    if (isConnected) {
+      getAllPositions()
+    }
+  }, [isConnected, getAllPositions])
+
+  useEffect(()=>{
+    console.log("Positions:", positions)
+  },[positions])
 
   const totalValue = positions.reduce((sum, pos) => sum + Number.parseFloat(pos.totalValue.replace(/[$,]/g, "")), 0)
   const totalFees =
@@ -147,6 +83,27 @@ export default function PositionsPage() {
             <div className="max-w-md mx-auto">
               <h3 className="text-xl font-semibold mb-2">Connect Your Wallet</h3>
               <p className="text-muted-foreground mb-6">Connect your wallet to view and manage your positions</p>
+            </div>
+          </Card>
+        ) : loading ? (
+          <Card className="glass border-border/50 p-12 text-center">
+            <div className="max-w-md mx-auto flex flex-col items-center">
+              <Loader2 className="h-8 w-8 animate-spin text-pink-500 mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Loading Positions</h3>
+              <p className="text-muted-foreground">Fetching your liquidity positions from the blockchain...</p>
+            </div>
+          </Card>
+        ) : error ? (
+          <Card className="glass p-12 text-center border-red-500/20 bg-red-500/5">
+            <div className="max-w-md mx-auto">
+              <h3 className="text-xl font-semibold mb-2 text-red-500">Error Loading Positions</h3>
+              <p className="text-muted-foreground mb-6">{error}</p>
+              <Button
+                onClick={() => getAllPositions()}
+                className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700"
+              >
+                Try Again
+              </Button>
             </div>
           </Card>
         ) : positions.length === 0 ? (

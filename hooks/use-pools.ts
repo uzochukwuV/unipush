@@ -64,116 +64,158 @@ export function usePools() {
   const getPoolAddress = useCallback(
     async (token0: string, token1: string, fee: number): Promise<string | null> => {
       try {
-        const factory = new ethers.Contract(UNISWAP_V3_CONTRACTS.factory, [
-          {
-            inputs: [
-              { name: "tokenA", type: "address" },
-              { name: "tokenB", type: "address" },
-              { name: "fee", type: "uint24" },
-            ],
-            name: "getPool",
-            outputs: [{ name: "pool", type: "address" }],
-            stateMutability: "view",
-            type: "function",
-          },
-        ])
+        if (!client) {
+          console.warn("[usePools] Push Chain client not initialized")
+          return null
+        }
+
+        // Get provider from Push Chain client
+        const provider = new ethers.JsonRpcProvider(
+          'https://evm.rpc-testnet-donut-node1.push.org/'
+        )
+
+        const factory = new ethers.Contract(
+          UNISWAP_V3_CONTRACTS.factory,
+          [
+            {
+              inputs: [
+                { name: "tokenA", type: "address" },
+                { name: "tokenB", type: "address" },
+                { name: "fee", type: "uint24" },
+              ],
+              name: "getPool",
+              outputs: [{ name: "pool", type: "address" }],
+              stateMutability: "view",
+              type: "function",
+            },
+          ],
+          provider
+        )
 
         // Ensure token0 < token1
         const [sortedToken0, sortedToken1] =
           token0.toLowerCase() < token1.toLowerCase() ? [token0, token1] : [token1, token0]
 
+        console.log(`[usePools] Querying pool: ${sortedToken0} + ${sortedToken1} fee: ${fee}`)
+
         const poolAddress = await factory.getPool(sortedToken0, sortedToken1, fee)
 
         // Check if pool exists
         if (poolAddress === "0x0000000000000000000000000000000000000000") {
+          console.log(`[usePools] Pool does not exist: ${sortedToken0}/${sortedToken1}`)
           return null
         }
 
+        console.log(`[usePools] Found pool: ${poolAddress}`)
         return poolAddress
       } catch (err) {
         console.error("[usePools] Error getting pool address:", err)
         return null
       }
     },
-    [],
+    [client],
   )
 
   /**
    * Get pool state data (price, liquidity, tick)
    */
-  const getPoolState = useCallback(async (poolAddress: string): Promise<Partial<PoolData> | null> => {
-    try {
-      const pool = new ethers.Contract(poolAddress, [
-        {
-          name: "slot0",
-          outputs: [
-            { name: "sqrtPriceX96", type: "uint160" },
-            { name: "tick", type: "int24" },
-            { name: "observationIndex", type: "uint16" },
-            { name: "observationCardinality", type: "uint16" },
-            { name: "observationCardinalityNext", type: "uint16" },
-            { name: "feeProtocol", type: "uint8" },
-            { name: "unlocked", type: "bool" },
+  const getPoolState = useCallback(
+    async (poolAddress: string): Promise<Partial<PoolData> | null> => {
+      try {
+        if (!client) {
+          console.warn("[usePools] Push Chain client not initialized")
+          return null
+        }
+
+        // Get provider from Push Chain client
+        const provider = new ethers.JsonRpcProvider(
+          'https://evm.rpc-testnet-donut-node1.push.org/'
+        )
+
+        const pool = new ethers.Contract(
+          poolAddress,
+          [
+            {
+              name: "slot0",
+              outputs: [
+                { name: "sqrtPriceX96", type: "uint160" },
+                { name: "tick", type: "int24" },
+                { name: "observationIndex", type: "uint16" },
+                { name: "observationCardinality", type: "uint16" },
+                { name: "observationCardinalityNext", type: "uint16" },
+                { name: "feeProtocol", type: "uint8" },
+                { name: "unlocked", type: "bool" },
+              ],
+              stateMutability: "view",
+              type: "function",
+            },
+            {
+              name: "liquidity",
+              outputs: [{ name: "", type: "uint128" }],
+              stateMutability: "view",
+              type: "function",
+            },
+            {
+              name: "token0",
+              outputs: [{ name: "", type: "address" }],
+              stateMutability: "view",
+              type: "function",
+            },
+            {
+              name: "token1",
+              outputs: [{ name: "", type: "address" }],
+              stateMutability: "view",
+              type: "function",
+            },
+            {
+              name: "fee",
+              outputs: [{ name: "", type: "uint24" }],
+              stateMutability: "view",
+              type: "function",
+            },
           ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          name: "liquidity",
-          outputs: [{ name: "", type: "uint128" }],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          name: "token0",
-          outputs: [{ name: "", type: "address" }],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          name: "token1",
-          outputs: [{ name: "", type: "address" }],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          name: "fee",
-          outputs: [{ name: "", type: "uint24" }],
-          stateMutability: "view",
-          type: "function",
-        },
-      ])
+          provider
+        )
 
-      const [slot0, liquidity, token0, token1, fee] = await Promise.all([
-        pool.slot0(),
-        pool.liquidity(),
-        pool.token0(),
-        pool.token1(),
-        pool.fee(),
-      ])
+        console.log(`[usePools] Fetching pool state for: ${poolAddress}`)
 
-      const token0Data = getTokenByAddress(token0)
-      const token1Data = getTokenByAddress(token1)
+        const [slot0, liquidity, token0, token1, fee] = await Promise.all([
+          pool.slot0(),
+          pool.liquidity(),
+          pool.token0(),
+          pool.token1(),
+          pool.fee(),
+        ])
 
-      if (!token0Data || !token1Data) {
+        const token0Data = getTokenByAddress(token0)
+        const token1Data = getTokenByAddress(token1)
+
+        if (!token0Data || !token1Data) {
+          console.warn(`[usePools] Unknown tokens in pool: ${token0} / ${token1}`)
+          return null
+        }
+
+        const poolData: Partial<PoolData> = {
+          address: poolAddress,
+          token0: token0Data,
+          token1: token1Data,
+          fee: Number(fee),
+          liquidity: liquidity.toString(),
+          sqrtPriceX96: slot0.sqrtPriceX96.toString(),
+          tick: Number(slot0.tick),
+          feePercentage: `${(BigInt(fee) / BigInt(10000)).toString()}%`,
+        }
+
+        console.log(`[usePools] Pool state fetched: ${poolData.token0?.symbol}/${poolData.token1?.symbol}`)
+
+        return poolData
+      } catch (err) {
+        console.error("[usePools] Error getting pool state:", err)
         return null
       }
-
-      return {
-        address: poolAddress,
-        token0: token0Data,
-        token1: token1Data,
-        fee: fee,
-        liquidity: liquidity.toString(),
-        sqrtPriceX96: slot0.sqrtPriceX96.toString(),
-        tick: slot0.tick,
-        feePercentage: `${(fee / 10000).toFixed(2)}%`,
-      }
-    } catch (err) {
-      console.error("[usePools] Error getting pool state:", err)
-      return null
-    }
-  }, [getTokenByAddress])
+    },
+    [client, getTokenByAddress]
+  )
 
   /**
    * Get all pools for token pairs
