@@ -1,19 +1,15 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext,  type ReactNode } from "react"
 import {
   type PushChainClient,
-  initializePushChainEVM,
-  initializePushChainSolana,
-  getUserChainInfo,
 } from "@/lib/push-chain"
 // Import necessary components from @pushchain/ui-kit
 import {
   PushUniversalWalletProvider,
-  PushUniversalAccountButton,
+
   PushUI,
-  usePushWalletContext,
-  usePushChainClient,
+
 } from '@pushchain/ui-kit';
 
 interface PushChainContextType {

@@ -128,6 +128,87 @@ const { collectFees } = useUniswapV3()
 await collectFees("12345") // position tokenId
 ```
 
+## Token Balance Operations
+
+### Import Balance Hook
+```typescript
+import { useTokenBalance, TokenBalance } from "@/hooks/use-token-balance"
+```
+
+### Get Single Token Balance
+```typescript
+const { getBalance } = useTokenBalance()
+
+const balance = await getBalance(
+  TOKENS_MAP.WPC.address,
+  "0x1234..." // wallet address
+)
+
+if (balance) {
+  console.log(`Formatted: ${balance.formatted}`)
+  console.log(`Raw: ${balance.balance}`)
+  console.log(`Decimal: ${balance.balanceDecimal}`)
+  console.log(`Decimals: ${balance.decimals}`)
+}
+```
+
+### Get Multiple Token Balances
+```typescript
+const { getBalances } = useTokenBalance()
+
+const balances = await getBalances(
+  [
+    TOKENS_MAP.WPC.address,
+    TOKENS_MAP.USDT.address,
+    TOKENS_MAP.pSOL.address
+  ],
+  "0x1234..." // wallet address
+)
+
+// Filter and use
+balances.forEach(bal => {
+  console.log(`${bal.address}: ${bal.formatted}`)
+})
+```
+
+### Check Token Allowance
+```typescript
+const { getAllowance } = useTokenBalance()
+
+const allowance = await getAllowance(
+  TOKENS_MAP.WPC.address,
+  "0x1234...",           // wallet address
+  "0x5678..."            // spender (router/positionManager)
+)
+
+console.log(`Allowance: ${allowance}`)
+```
+
+### Using in Components
+```typescript
+export function TokenBalanceDisplay() {
+  const { getBalance } = useTokenBalance()
+  const { pushChainClient } = usePushChainClient()
+  const [balance, setBalance] = useState<TokenBalance | null>(null)
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!pushChainClient) return
+      const address = await pushChainClient.getSigner().getAddress()
+      const bal = await getBalance(TOKENS_MAP.WPC.address, address)
+      setBalance(bal)
+    }
+    fetchBalance()
+  }, [pushChainClient, getBalance])
+
+  return balance ? (
+    <div>Balance: {balance.formatted} WPC</div>
+  ) : (
+    <div>Loading...</div>
+  )
+}
+```
+
 ## Token Details
 
 | Symbol | Name | Address | Decimals |
@@ -245,6 +326,7 @@ if (!pool) {
 
 - Pool Queries: `hooks/use-pools.ts`
 - Uniswap Operations: `hooks/use-uniswap-v3.ts`
+- Token Balance: `hooks/use-token-balance.ts`
 - Push Chain: `hooks/use-mobile.ts`, `hooks/use-toast.ts`
 
 ## Documentation Files

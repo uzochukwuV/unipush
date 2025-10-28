@@ -94,7 +94,6 @@ export function TokenSelector({ selectedToken, onSelectToken, tokens }: TokenSel
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {token.balance && <div className="text-sm text-muted-foreground">{token.balance}</div>}
                   {selectedToken.address === token.address && <Check className="h-4 w-4 text-pink-500" />}
                 </div>
               </button>

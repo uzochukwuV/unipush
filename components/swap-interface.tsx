@@ -10,6 +10,8 @@ import { TokenSelector } from "@/components/token-selector"
 import { SwapSettings } from "@/components/swap-settings"
 import { useUniswapV3 } from "@/hooks/use-uniswap-v3"
 import { useToast } from "@/hooks/use-toast"
+import { useTokenBalance, TokenBalance } from "@/hooks/use-token-balance"
+import { usePushChainClient } from "@pushchain/ui-kit"
 import { PRODUCTION_POOLS } from "@/lib/uniswap-v3-contracts"
 import { POPULAR_TOKENS, Token } from "@/lib/constants"
 import { cn } from "@/lib/utils"
@@ -18,6 +20,8 @@ import { ethers } from "ethers"
 export function SwapInterface() {
   const { swap, loading, error } = useUniswapV3()
   const { toast } = useToast()
+  const { getBalance } = useTokenBalance()
+  const { pushChainClient } = usePushChainClient()
 
   const [fromToken, setFromToken] = useState<Token>(POPULAR_TOKENS[0])
   const [toToken, setToToken] = useState<Token>(POPULAR_TOKENS[1])
@@ -26,6 +30,37 @@ export function SwapInterface() {
   const [slippage, setSlippage] = useState("0.5")
   const [isSwapping, setIsSwapping] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [fromBalance, setFromBalance] = useState<TokenBalance | null>(null)
+  const [toBalance, setToBalance] = useState<TokenBalance | null>(null)
+  const [loadingBalances, setLoadingBalances] = useState(false)
+
+  // Fetch balances when tokens or wallet changes
+  useEffect(() => {
+    const fetchBalances = async () => {
+      if (!pushChainClient) return
+
+      try {
+        setLoadingBalances(true)
+
+        const walletAddress = await pushChainClient.universal.account
+
+        // Fetch both balances in parallel
+        const [fromBal, toBal] = await Promise.all([
+          getBalance(fromToken.address, walletAddress),
+          getBalance(toToken.address, walletAddress),
+        ])
+
+        setFromBalance(fromBal)
+        setToBalance(toBal)
+      } catch (err) {
+        console.error("[SwapInterface] Error fetching balances:", err)
+      } finally {
+        setLoadingBalances(false)
+      }
+    }
+
+    fetchBalances()
+  }, [fromToken, toToken, pushChainClient, getBalance])
 
   const getExchangeRate = () => {
     const pool = Object.values(PRODUCTION_POOLS).find(
@@ -191,9 +226,14 @@ export function SwapInterface() {
           </div>
           <TokenSelector selectedToken={fromToken} onSelectToken={setFromToken} tokens={POPULAR_TOKENS} />
         </div>
-        {fromToken?.balance && (
+        {fromBalance && (
           <div className="text-xs text-muted-foreground">
-            Balance: {fromToken?.balance} {fromToken.symbol}
+            Balance: {fromBalance.formatted} {fromToken.symbol}
+          </div>
+        )}
+        {loadingBalances && !fromBalance && (
+          <div className="text-xs text-muted-foreground animate-pulse">
+            Loading balance...
           </div>
         )}
       </div>
@@ -225,9 +265,14 @@ export function SwapInterface() {
           </div>
           <TokenSelector selectedToken={toToken} onSelectToken={setToToken} tokens={POPULAR_TOKENS} />
         </div>
-        {toToken?.balance && (
+        {toBalance && (
           <div className="text-xs text-muted-foreground">
-            Balance: {toToken?.balance} {toToken.symbol}
+            Balance: {toBalance.formatted} {toToken.symbol}
+          </div>
+        )}
+        {loadingBalances && !toBalance && (
+          <div className="text-xs text-muted-foreground animate-pulse">
+            Loading balance...
           </div>
         )}
       </div>

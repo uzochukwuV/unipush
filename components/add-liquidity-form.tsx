@@ -1,15 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, Minus, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { usePushChain } from "@/contexts/push-chain-context"
 import { useUniswapV3 } from "@/hooks/use-uniswap-v3"
 import { useToast } from "@/hooks/use-toast"
+import { useTokenBalance, TokenBalance } from "@/hooks/use-token-balance"
+import { usePushChainClient } from "@pushchain/ui-kit"
 import { PRODUCTION_POOLS } from "@/lib/uniswap-v3-contracts"
 import { calculateTickRange } from "@/lib/universal-payload"
 import { ethers } from "ethers"
@@ -19,9 +20,11 @@ interface AddLiquidityFormProps {
 }
 
 export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
-  const { isConnected, connectEVM } = usePushChain()
+  const { isInitialized: isConnected } = usePushChainClient()
   const { addLiquidity, loading } = useUniswapV3()
   const { toast } = useToast()
+  const { getBalance } = useTokenBalance()
+  const { pushChainClient } = usePushChainClient()
 
   const [activeTab, setActiveTab] = useState<"add" | "remove">("add")
   const [amount0, setAmount0] = useState("")
@@ -29,6 +32,9 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   const [minPrice, setMinPrice] = useState("")
   const [maxPrice, setMaxPrice] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [balance0, setBalance0] = useState<TokenBalance | null>(null)
+  const [balance1, setBalance1] = useState<TokenBalance | null>(null)
+  const [loadingBalances, setLoadingBalances] = useState(false)
 
   const poolData = Object.values(PRODUCTION_POOLS).find((p) => p.address.toLowerCase() === poolId.toLowerCase())
 
@@ -38,6 +44,34 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
     currentTick: "0",
     fee: 3000,
   }
+
+  // Fetch token balances when pool data changes or wallet connects
+  useEffect(() => {
+    const fetchBalances = async () => {
+      if (!pushChainClient || !poolData) return
+
+      try {
+        setLoadingBalances(true)
+
+        const walletAddress = await pushChainClient.universal.account
+
+        // Fetch both balances in parallel
+        const [bal0, bal1] = await Promise.all([
+          getBalance(poolData.token0, walletAddress),
+          getBalance(poolData.token1, walletAddress),
+        ])
+
+        setBalance0(bal0)
+        setBalance1(bal1)
+      } catch (err) {
+        console.error("[AddLiquidityForm] Error fetching balances:", err)
+      } finally {
+        setLoadingBalances(false)
+      }
+    }
+
+    fetchBalances()
+  }, [poolData, pushChainClient, getBalance])
 
   const handleAmount0Change = (value: string) => {
     setAmount0(value)
@@ -55,10 +89,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   }
 
   const handleAddLiquidity = async () => {
-    if (!isConnected) {
-      await connectEVM()
-      return
-    }
+   
 
     if (!amount0 || !amount1 || !minPrice || !maxPrice) {
       toast({
@@ -94,8 +125,8 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
 
       console.log("[v0] Calculated ticks:", { tickLower, tickUpper })
 
-      const amount0Wei = ethers.utils.parseUnits(amount0, 18)
-      const amount1Wei = ethers.utils.parseUnits(amount1, 6)
+      const amount0Wei = ethers.parseUnits(amount0, 18)
+      const amount1Wei = ethers.parseUnits(amount1, 6)
 
       console.log("[v0] Adding liquidity with:", {
         token0: poolData.token0,
@@ -139,10 +170,7 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
   }
 
   const handleRemoveLiquidity = async () => {
-    if (!isConnected) {
-      await connectEVM()
-      return
-    }
+  
 
     if (!amount0) {
       toast({
@@ -243,7 +271,12 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <Label className="text-sm text-muted-foreground">{pool.token0Symbol}</Label>
-                <div className="text-xs text-muted-foreground">Balance: 0 {pool.token0Symbol}</div>
+                {balance0 && (
+                  <div className="text-xs text-muted-foreground">Balance: {balance0.formatted} {pool.token0Symbol}</div>
+                )}
+                {loadingBalances && !balance0 && (
+                  <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
+                )}
               </div>
               <div className="flex gap-2">
                 <Input
@@ -262,7 +295,12 @@ export function AddLiquidityForm({ poolId }: AddLiquidityFormProps) {
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <Label className="text-sm text-muted-foreground">{pool.token1Symbol}</Label>
-                <div className="text-xs text-muted-foreground">Balance: 0 {pool.token1Symbol}</div>
+                {balance1 && (
+                  <div className="text-xs text-muted-foreground">Balance: {balance1.formatted} {pool.token1Symbol}</div>
+                )}
+                {loadingBalances && !balance1 && (
+                  <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
+                )}
               </div>
               <div className="flex gap-2">
                 <Input

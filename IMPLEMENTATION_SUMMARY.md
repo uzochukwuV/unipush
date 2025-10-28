@@ -405,6 +405,91 @@ await removeLiquidity({
 
 ---
 
+## Part 4: Token Balance Management
+
+### New Token Balance Hook
+
+**Location**: `hooks/use-token-balance.ts`
+
+**Purpose**: Query ERC-20 token balances and allowances for wallets.
+
+**Key Functions**:
+
+```typescript
+// Get single token balance
+getBalance(tokenAddress: string, walletAddress: string): Promise<TokenBalance | null>
+
+// Get multiple token balances
+getBalances(tokenAddresses: string[], walletAddress: string): Promise<TokenBalance[]>
+
+// Get token allowance
+getAllowance(tokenAddress: string, walletAddress: string, spenderAddress: string): Promise<string | null>
+```
+
+**TokenBalance Interface**:
+```typescript
+interface TokenBalance {
+  address: string              // Token contract address
+  balance: string              // Raw balance (as string for big numbers)
+  balanceDecimal: number        // Decimal formatted balance
+  decimals: number              // Token decimals
+  formatted: string            // Human-readable formatted balance
+}
+```
+
+**Features**:
+- Automatic decimal conversion using ethers.formatUnits()
+- Smart formatting (M for millions, K for thousands)
+- Batch balance queries for multiple tokens
+- Token allowance checking for approvals
+- Comprehensive error handling
+
+### Integration in Components
+
+**SwapInterface** (`components/swap-interface.tsx`):
+- Imports `useTokenBalance` hook
+- Fetches balances when tokens change
+- Displays formatted balance below each token selector
+- Shows loading state while fetching
+
+**AddLiquidityForm** (`components/add-liquidity-form.tsx`):
+- Imports `useTokenBalance` hook
+- Fetches token0 and token1 balances when pool changes
+- Displays balances for both tokens
+- Validates amounts against user balances
+
+### Usage Example
+
+```typescript
+import { useTokenBalance } from "@/hooks/use-token-balance"
+import { usePushChainClient } from "@pushchain/ui-kit"
+import { TOKENS_MAP } from "@/lib/constants"
+
+export function MyComponent() {
+  const { getBalance } = useTokenBalance()
+  const { pushChainClient } = usePushChainClient()
+  const [balance, setBalance] = useState<TokenBalance | null>(null)
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!pushChainClient) return
+
+      const walletAddress = await pushChainClient.getSigner().getAddress()
+      const bal = await getBalance(TOKENS_MAP.WPC.address, walletAddress)
+      setBalance(bal)
+    }
+
+    fetchBalance()
+  }, [pushChainClient, getBalance])
+
+  return balance ? (
+    <div>Balance: {balance.formatted} WPC</div>
+  ) : null
+}
+```
+
+---
+
 ## File Structure
 
 ```
@@ -415,7 +500,8 @@ project/
 │   └── uniswap-v3-contracts.ts   # Contract ABIs (updated)
 ├── hooks/
 │   ├── use-uniswap-v3.ts        # V3 operations (improved)
-│   └── use-pools.ts              # NEW: Pool querying
+│   ├── use-pools.ts              # NEW: Pool querying
+│   └── use-token-balance.ts      # NEW: Token balance querying
 ├── components/
 │   ├── create-pool-dialog.tsx    # Updated to use constants
 │   ├── swap-interface.tsx        # Updated to use constants
@@ -436,6 +522,8 @@ project/
 | Pool Creation | Broken (used factory) | Fixed (uses PositionManager) |
 | Liquidity Removal | Not available | Full implementation |
 | Fee Collection | Not available | Full implementation |
+| Token Balances | Not available | Real-time via useTokenBalance() |
+| Balance Display | Hardcoded "0" | Dynamic formatted balances |
 | Type Safety | Partial | Full with interfaces |
 | Documentation | Minimal | Comprehensive |
 
